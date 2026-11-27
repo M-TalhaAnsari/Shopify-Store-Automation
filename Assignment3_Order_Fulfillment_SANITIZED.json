@@ -1,0 +1,1217 @@
+{
+  "id": "A3OrdFlfl0000001",
+  "name": "Assignment 3 - Shopify Order-to-Fulfillment Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shopify-order-create",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "77b3cc51-135f-42c4-a3fd-aaaf3e8a242c",
+      "name": "Shopify Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "8dbe38fd-cf0c-4f3c-af19-c6fa0874f930"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg1",
+              "name": "low_stock_threshold",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "cfg2",
+              "name": "shopify_store_domain",
+              "value": "northern-treasures-a73kt59n.myshopify.com",
+              "type": "string"
+            },
+            {
+              "id": "cfg3",
+              "name": "shopify_api_version",
+              "value": "2026-10",
+              "type": "string"
+            },
+            {
+              "id": "cfg4",
+              "name": "store_name",
+              "value": "Northern Treasures",
+              "type": "string"
+            },
+            {
+              "id": "cfg5",
+              "name": "owner_telegram_chat_id",
+              "value": "CHAT_ID_PENDING",
+              "type": "string"
+            },
+            {
+              "id": "cfg6",
+              "name": "shopify_webhook_secret",
+              "value": "SHOPIFY_WEBHOOK_SECRET_REDACTED",
+              "type": "string"
+            },
+            {
+              "id": "cfg7",
+              "name": "enforce_hmac",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "cfg8",
+              "name": "google_sheet_id",
+              "value": "GOOGLE_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "cfg9",
+              "name": "google_sheet_tab",
+              "value": "Sheet1",
+              "type": "string"
+            },
+            {
+              "id": "cfg10",
+              "name": "sender_email",
+              "value": "mtalhaansari.01@gmail.com",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "baf5de9f-453d-4360-8b9d-93fe6fb3398d",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pure-JS HMAC-SHA256 (works inside n8n v2 JS Task Runner without requiring Node 'crypto' module)\nfunction utf8Bytes(str) {\n  const bytes = [];\n  for (let i = 0; i < str.length; i++) {\n    let code = str.charCodeAt(i);\n    if (code < 0x80) bytes.push(code);\n    else if (code < 0x800) bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));\n    else if (code < 0xd800 || code >= 0xe000) bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));\n    else {\n      i++;\n      code = 0x10000 + (((code & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));\n      bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));\n    }\n  }\n  return new Uint8Array(bytes);\n}\n\nfunction sha256(msgBytes) {\n  const K = new Uint32Array([\n    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2\n  ]);\n  const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);\n  const l = msgBytes.length;\n  const bitLen = l * 8;\n  const padLen = ((l + 9 + 63) >> 6) << 6;\n  const padded = new Uint8Array(padLen);\n  padded.set(msgBytes);\n  padded[l] = 0x80;\n  const dv = new DataView(padded.buffer);\n  dv.setUint32(padLen - 8, Math.floor(bitLen / 0x100000000), false);\n  dv.setUint32(padLen - 4, bitLen >>> 0, false);\n  const W = new Uint32Array(64);\n  const rotr = (x, n) => (x >>> n) | (x << (32 - n));\n  for (let off = 0; off < padLen; off += 64) {\n    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4, false);\n    for (let i = 16; i < 64; i++) {\n      const s0 = rotr(W[i-15],7) ^ rotr(W[i-15],18) ^ (W[i-15]>>>3);\n      const s1 = rotr(W[i-2],17) ^ rotr(W[i-2],19) ^ (W[i-2]>>>10);\n      W[i] = (W[i-16] + s0 + W[i-7] + s1) >>> 0;\n    }\n    let [a,b,c,d,e,f,g,h] = H;\n    for (let i = 0; i < 64; i++) {\n      const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);\n      const ch = (e & f) ^ ((~e) & g);\n      const t1 = (h + S1 + ch + K[i] + W[i]) >>> 0;\n      const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);\n      const maj = (a & b) ^ (a & c) ^ (b & c);\n      const t2 = (S0 + maj) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;\n    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;\n  }\n  const out = new Uint8Array(32);\n  const odv = new DataView(out.buffer);\n  for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i], false);\n  return out;\n}\n\nfunction hmacSha256Base64(secretStr, msgBytes) {\n  let key = utf8Bytes(secretStr);\n  if (key.length > 64) key = sha256(key);\n  const ipad = new Uint8Array(64);\n  const opad = new Uint8Array(64);\n  for (let i = 0; i < 64; i++) {\n    const k = i < key.length ? key[i] : 0;\n    ipad[i] = k ^ 0x36;\n    opad[i] = k ^ 0x5c;\n  }\n  const inner = new Uint8Array(64 + msgBytes.length);\n  inner.set(ipad);\n  inner.set(msgBytes, 64);\n  const innerHash = sha256(inner);\n  const outer = new Uint8Array(64 + 32);\n  outer.set(opad);\n  outer.set(innerHash, 64);\n  const mac = sha256(outer);\n  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';\n  let b64 = '';\n  for (let i = 0; i < mac.length; i += 3) {\n    const b0 = mac[i], b1 = i + 1 < mac.length ? mac[i + 1] : 0, b2 = i + 2 < mac.length ? mac[i + 2] : 0;\n    const trip = (b0 << 16) | (b1 << 8) | b2;\n    b64 += chars[(trip >> 18) & 63] + chars[(trip >> 12) & 63] + (i + 1 < mac.length ? chars[(trip >> 6) & 63] : '=') + (i + 2 < mac.length ? chars[trip & 63] : '=');\n  }\n  return b64;\n}\n\nfunction safeEqual(a, b) {\n  if (a.length !== b.length) return false;\n  let diff = 0;\n  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);\n  return diff === 0;\n}\n\nconst item = $input.first();\nconst payload = item.json || {};\nconst headers = payload.headers || {};\nconst order = (payload.body && typeof payload.body === 'object') ? payload.body : payload;\n\n// Read centralized settings\nconst threshold = Number(payload.low_stock_threshold ?? 5);\nconst storeDomain = payload.shopify_store_domain || 'northern-treasures-a73kt59n.myshopify.com';\nconst apiVersion = payload.shopify_api_version || '2026-10';\nconst storeName = payload.store_name || 'Northern Treasures';\nconst ownerChatId = String(payload.owner_telegram_chat_id || '');\nconst webhookSecret = String(payload.shopify_webhook_secret || '');\nconst enforceHmac = payload.enforce_hmac !== false;\nconst sheetId = String(payload.google_sheet_id || '');\nconst sheetTab = String(payload.google_sheet_tab || 'Orders');\nconst senderEmail = String(payload.sender_email || '');\n\n// 1. Verify Shopify HMAC-SHA256 signature\nlet hmacStatus = 'verified';\nlet hmacValid = true;\nconst secretConfigured = Boolean(webhookSecret && !webhookSecret.startsWith('REPLACE_WITH_'));\n\nif (enforceHmac && secretConfigured) {\n  let receivedHmac = '';\n  for (const [k, v] of Object.entries(headers)) {\n    if (k.toLowerCase() === 'x-shopify-hmac-sha256') {\n      receivedHmac = Array.isArray(v) ? v[0] : String(v || '');\n      break;\n    }\n  }\n  if (!receivedHmac) {\n    hmacValid = false;\n    hmacStatus = 'missing_header';\n  } else {\n    let rawBuf = null;\n    try {\n      if (item.binary && item.binary.data) {\n        if (typeof this !== 'undefined' && this.helpers && typeof this.helpers.getBinaryDataBuffer === 'function') {\n          rawBuf = new Uint8Array(await this.helpers.getBinaryDataBuffer(0, 'data'));\n        } else if (item.binary.data.data) {\n          rawBuf = new Uint8Array(Buffer.from(item.binary.data.data, 'base64'));\n        }\n      }\n    } catch (e) {\n      rawBuf = null;\n    }\n    if (!rawBuf) {\n      rawBuf = utf8Bytes(JSON.stringify(order));\n    }\n    const computed = hmacSha256Base64(webhookSecret, rawBuf);\n    if (!safeEqual(computed, receivedHmac.trim())) {\n      hmacValid = false;\n      hmacStatus = 'mismatch';\n    }\n  }\n} else if (!secretConfigured) {\n  hmacStatus = 'secret_not_configured';\n}\n\nif (!hmacValid) {\n  return [{\n    json: {\n      route: 'invalid',\n      errorReason: 'Shopify HMAC verification failed (' + hmacStatus + '). Request rejected.',\n      orderId: String(order.name || order.id || 'Unknown'),\n      owner_telegram_chat_id: ownerChatId,\n      hmacStatus,\n    },\n  }];\n}\n\n// 2. Extract and validate required order fields\nconst shopifyOrderId = order.id !== undefined && order.id !== null ? String(order.id).trim() : '';\nconst orderId = String(order.name || (order.order_number ? '#' + order.order_number : '') || shopifyOrderId).trim();\n\nconst cust = order.customer || {};\nconst bill = order.billing_address || {};\nconst ship = order.shipping_address || {};\nconst fullName = [cust.first_name, cust.last_name].filter(Boolean).join(' ').trim()\n  || bill.name\n  || ship.name\n  || 'Valued Customer';\nconst customerEmail = String(order.email || order.contact_email || cust.email || '').trim();\nconst hasValidEmail = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(customerEmail);\nconst currency = String(order.currency || order.presentment_currency || 'PKR');\nconst totalAmount = Number(order.total_price ?? order.current_total_price ?? 0);\n\nconst rawItems = Array.isArray(order.line_items) ? order.line_items : [];\nif (!shopifyOrderId || !orderId || rawItems.length === 0) {\n  return [{\n    json: {\n      route: 'invalid',\n      errorReason: 'Malformed order payload: missing Order ID or line_items.',\n      orderId: orderId || 'Missing',\n      owner_telegram_chat_id: ownerChatId,\n      hmacStatus,\n    },\n  }];\n}\n\nconst lineItems = rawItems.map((li, idx) => {\n  const qty = Number(li.quantity);\n  const price = Number(li.price ?? 0);\n  const lineRevenue = Number((price * qty).toFixed(2));\n  return {\n    itemIndex: idx + 1,\n    totalItems: rawItems.length,\n    lineItemId: String(li.id || idx + 1),\n    productId: li.product_id ? String(li.product_id) : '',\n    variantId: li.variant_id ? String(li.variant_id) : '',\n    productTitle: String(li.title || li.name || 'Unnamed Product'),\n    variantTitle: String(li.variant_title || ''),\n    sku: String(li.sku || 'N/A'),\n    quantity: qty,\n    unitPrice: price,\n    lineRevenue,\n  };\n});\n\nconst badQty = lineItems.find((x) => !Number.isFinite(x.quantity) || x.quantity <= 0);\nif (badQty) {\n  return [{\n    json: {\n      route: 'invalid',\n      errorReason: 'Invalid quantity (' + badQty.quantity + ') for item \"' + badQty.productTitle + '\" in order ' + orderId,\n      orderId,\n      owner_telegram_chat_id: ownerChatId,\n      hmacStatus,\n    },\n  }];\n}\n\n// 3. Duplicate webhook / idempotency protection\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processedOrders || typeof staticData.processedOrders !== 'object') {\n  staticData.processedOrders = {};\n}\n\nif (staticData.processedOrders[shopifyOrderId]) {\n  return [{\n    json: {\n      route: 'duplicate',\n      errorReason: 'Duplicate webhook detected for Order ' + orderId + ' (ID: ' + shopifyOrderId + '). Previously processed at ' + staticData.processedOrders[shopifyOrderId] + '. Inventory was NOT reduced again.',\n      orderId,\n      shopifyOrderId,\n      owner_telegram_chat_id: ownerChatId,\n      hmacStatus,\n    },\n  }];\n}\n\nconst processedAt = new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi', hour12: true });\nconst processedIso = new Date().toISOString();\nstaticData.processedOrders[shopifyOrderId] = processedIso;\n\n// Keep staticData bounded to last 500 orders\nconst keys = Object.keys(staticData.processedOrders);\nif (keys.length > 500) {\n  for (const oldKey of keys.slice(0, keys.length - 500)) {\n    delete staticData.processedOrders[oldKey];\n  }\n}\n\nreturn [{\n  json: {\n    route: 'valid',\n    hmacStatus,\n    orderId,\n    shopifyOrderId,\n    customerName: fullName,\n    customerEmail,\n    hasValidEmail,\n    customerDisplay: hasValidEmail ? (fullName + ' (' + customerEmail + ')') : (fullName + ' (No Email Provided)'),\n    currency,\n    totalAmount,\n    processedAt,\n    processedIso,\n    low_stock_threshold: threshold,\n    shopify_store_domain: storeDomain,\n    shopify_api_version: apiVersion,\n    store_name: storeName,\n    owner_telegram_chat_id: ownerChatId,\n    google_sheet_id: sheetId,\n    google_sheet_tab: sheetTab,\n    sender_email: senderEmail,\n    lineItems,\n  },\n}];"
+      },
+      "id": "faa1b52b-545a-42c1-a1c0-20371a6c1638",
+      "name": "Verify HMAC & Validate Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw1",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "valid",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Valid Order"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw2",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "duplicate",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Duplicate Order"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "sw3",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "invalid",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Invalid / Unauthorized"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a5585ac5-3585-46b6-80d2-340eae37cd18",
+      "name": "Route Order Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.owner_telegram_chat_id }}",
+        "text": "=ℹ️ *Duplicate Webhook Ignored*\\nOrder: {{ $json.orderId }}\\n{{ $json.errorReason }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "b9d23809-7e9a-4091-8b78-0ebf6b4072b6",
+      "name": "Notify Duplicate Ignored (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        200
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.owner_telegram_chat_id }}",
+        "text": "=🚨 *Order Validation / Security Failure*\\nOrder: {{ $json.orderId }}\\nReason: {{ $json.errorReason }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "de4c2887-4bee-4ffa-b149-1d85cd580698",
+      "name": "Notify Validation Error (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        400
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const order = $input.first().json;\nreturn order.lineItems.map((li) => ({\n  json: {\n    orderId: order.orderId,\n    shopifyOrderId: order.shopifyOrderId,\n    customerName: order.customerName,\n    customerEmail: order.customerEmail,\n    hasValidEmail: order.hasValidEmail,\n    customerDisplay: order.customerDisplay,\n    currency: order.currency,\n    totalAmount: order.totalAmount,\n    processedAt: order.processedAt,\n    low_stock_threshold: order.low_stock_threshold,\n    shopify_store_domain: order.shopify_store_domain,\n    shopify_api_version: order.shopify_api_version,\n    store_name: order.store_name,\n    owner_telegram_chat_id: order.owner_telegram_chat_id,\n    google_sheet_id: order.google_sheet_id,\n    google_sheet_tab: order.google_sheet_tab,\n    sender_email: order.sender_email,\n    ...li,\n    productDisplay: li.sku && li.sku !== 'N/A' ? (li.productTitle + ' (SKU: ' + li.sku + ')') : li.productTitle,\n  },\n}));"
+      },
+      "id": "c494030d-a67b-42be-bce0-6b06bf6a1976",
+      "name": "Split Line Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "77e46e16-8604-4452-8f1e-7060232f9584",
+      "name": "Loop Over Line Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json.shopify_store_domain }}/admin/api/{{ $json.shopify_api_version }}/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: \"query getVariantInventory($id: ID!) { productVariant(id: $id) { id title sku inventoryItem { id tracked inventoryLevels(first: 5) { nodes { location { id name } quantities(names: [\\\"available\\\"]) { name quantity } } } } } }\", variables: { id: \"gid://shopify/ProductVariant/\" + $json.variantId } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "2d4b8b27-ca12-4ddf-95a9-1517deb7d9df",
+      "name": "Fetch Variant Inventory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1360,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SHOPIFY_HEADER_AUTH_CRED_ID",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Loop Over Line Items').last().json;\nconst err = $input.first().json;\nreturn [{\n  json: {\n    ...item,\n    stockAction: 'api_error',\n    currentStock: null,\n    errorReason: 'Shopify API lookup failed/timed out for \"' + item.productTitle + '\": ' + (err.message || JSON.stringify(err)).slice(0, 250),\n  },\n}];"
+      },
+      "id": "dc9889e0-ad81-4a85-a9d3-ec9d4c668996",
+      "name": "Format Fetch API Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Loop Over Line Items').last().json;\nconst res = $input.first().json || {};\n\nlet stockAction = 'adjust';\nlet errorReason = '';\nlet currentStock = null;\nlet inventoryItemId = null;\nlet locationId = null;\nlet locationName = '';\nlet mutationBody = null;\n\nif (!item.variantId) {\n  stockAction = 'api_error';\n  errorReason = 'Line item \"' + item.productTitle + '\" has no Shopify variantId (custom/manual item).';\n} else if (res.errors && res.errors.length) {\n  stockAction = 'api_error';\n  errorReason = 'Shopify GraphQL error: ' + JSON.stringify(res.errors);\n} else {\n  const variant = res.data && res.data.productVariant;\n  const inv = variant && variant.inventoryItem;\n  if (!variant || !inv) {\n    stockAction = 'api_error';\n    errorReason = 'Variant ' + item.variantId + ' not found or has no inventoryItem in Shopify.';\n  } else if (!inv.tracked) {\n    stockAction = 'not_tracked';\n    errorReason = 'Inventory tracking is disabled for \"' + item.productTitle + '\" (variant ' + item.variantId + ').';\n  } else {\n    const levels = (inv.inventoryLevels && inv.inventoryLevels.nodes) || [];\n    const primaryLevel = levels[0];\n    if (!primaryLevel) {\n      stockAction = 'api_error';\n      errorReason = 'No inventory location level found for \"' + item.productTitle + '\".';\n    } else {\n      inventoryItemId = inv.id;\n      locationId = primaryLevel.location && primaryLevel.location.id;\n      locationName = (primaryLevel.location && primaryLevel.location.name) || 'Default';\n      const availObj = (primaryLevel.quantities || []).find((q) => q.name === 'available');\n      currentStock = availObj ? Number(availObj.quantity) : 0;\n\n      if (currentStock <= 0 || (currentStock - item.quantity) < 0) {\n        stockAction = 'out_of_stock';\n        errorReason = 'Insufficient stock for \"' + item.productTitle + '\" (Available: ' + currentStock + ', Ordered: ' + item.quantity + '). Negative stock prevented.';\n      } else {\n        mutationBody = {\n          query: 'mutation inventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!, $idempotentKey: String!) { inventoryAdjustQuantities(input: $input) @idempotent(key: $idempotentKey) { inventoryAdjustmentGroup { reason changes { name delta quantityAfterChange } } userErrors { field message } } }',\n          variables: {\n            idempotentKey: String(item.shopifyOrderId) + '-' + String(item.lineItemId),\n            input: {\n              reason: 'correction',\n              name: 'available',\n              changes: [\n                {\n                  delta: -item.quantity,\n                  changeFromQuantity: currentStock,\n                  inventoryItemId,\n                  locationId,\n                },\n              ],\n            },\n          },\n        };\n      }\n    }\n  }\n}\n\nreturn [{\n  json: {\n    ...item,\n    stockAction,\n    errorReason,\n    currentStock,\n    expectedRemaining: currentStock !== null ? (currentStock - item.quantity) : null,\n    inventoryItemId,\n    locationId,\n    locationName,\n    mutationBody,\n  },\n}];"
+      },
+      "id": "c1f6ff2e-7e20-4c44-ba66-e875393addc4",
+      "name": "Evaluate Stock & Build Mutation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "stk1",
+              "leftValue": "={{ $json.stockAction }}",
+              "rightValue": "adjust",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0cb2666d-ccd5-4e50-93c6-b7fea7fca330",
+      "name": "Stock Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1820,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://{{ $json.shopify_store_domain }}/admin/api/{{ $json.shopify_api_version }}/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.mutationBody) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "f6873427-5a63-4906-9d96-7c47d5b7b00f",
+      "name": "Adjust Shopify Inventory",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2060,
+        -60
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SHOPIFY_HEADER_AUTH_CRED_ID",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Evaluate Stock & Build Mutation').last().json;\nconst err = $input.first().json;\nreturn [{\n  json: {\n    ...item,\n    errorReason: 'Shopify inventory update failed/timed out for \"' + item.productTitle + '\": ' + (err.message || JSON.stringify(err)).slice(0, 250),\n  },\n}];"
+      },
+      "id": "d89b3dc0-c412-4ec1-8485-9b57cf54ee85",
+      "name": "Format Inventory API Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Evaluate Stock & Build Mutation').last().json;\nconst res = $input.first().json || {};\n\nconst adj = res.data && res.data.inventoryAdjustQuantities;\nconst userErrors = (adj && adj.userErrors) || [];\nif ((res.errors && res.errors.length) || userErrors.length) {\n  throw new Error('Shopify inventory adjustment failed for ' + ctx.productTitle + ': ' + JSON.stringify(userErrors.length ? userErrors : res.errors));\n}\n\nconst changes = (adj && adj.inventoryAdjustmentGroup && adj.inventoryAdjustmentGroup.changes) || [];\nconst availChange = changes.find((c) => c.name === 'available') || changes[0];\nconst remainingStock = availChange && availChange.quantityAfterChange !== undefined\n  ? Number(availChange.quantityAfterChange)\n  : Number(ctx.expectedRemaining);\n\nconst isLowStock = remainingStock < Number(ctx.low_stock_threshold);\n\nreturn [{\n  json: {\n    ...ctx,\n    processedStatus: 'updated',\n    remainingStock,\n    isLowStock,\n  },\n}];"
+      },
+      "id": "f4b10b3b-54fb-4796-b480-d50ab36ef297",
+      "name": "Parse Inventory Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Order ID": "={{ $json.orderId }}",
+            "Product": "={{ $json.productDisplay }}",
+            "Quantity": "={{ $json.quantity }}",
+            "Revenue ": "={{ $json.lineRevenue }}",
+            "Customer": "={{ $json.customerDisplay }}",
+            "Timestamp": "={{ $json.processedAt }}",
+            "Remaining Stock": "={{ $json.remainingStock }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Product",
+              "displayName": "Product",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Quantity",
+              "displayName": "Quantity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Revenue ",
+              "displayName": "Revenue ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer",
+              "displayName": "Customer",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Remaining Stock",
+              "displayName": "Remaining Stock",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2a685119-0782-463e-9ece-177a5a6e7669",
+      "name": "Log Order Item to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2540,
+        -100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CRED_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Parse Inventory Result').last().json;\nconst err = $input.first().json;\nreturn [{\n  json: {\n    ...item,\n    sheetsError: (err.message || JSON.stringify(err)).slice(0, 250),\n  },\n}];"
+      },
+      "id": "34990ef9-295c-46e0-b92b-4ba6581bad3b",
+      "name": "Format Sheets Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2760,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.owner_telegram_chat_id }}",
+        "text": "=⚠️ *Google Sheets Logging Failed*\\nOrder: {{ $json.orderId }}\\nProduct: {{ $json.productDisplay }}\\nError: {{ $json.sheetsError }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "89b18846-5fe4-46ed-9ab6-e3e721346381",
+      "name": "Send Sheets Error Alert (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2980,
+        60
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ls1",
+              "leftValue": "={{ $('Parse Inventory Result').last().json.isLowStock }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "eed5a8fe-7b9e-4ba9-b5b0-a5795072e058",
+      "name": "Is Low Stock?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3200,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Inventory Result').last().json.owner_telegram_chat_id }}",
+        "text": "=⚠️ *LOW STOCK WARNING*\\nProduct: {{ $('Parse Inventory Result').last().json.productDisplay }}\\nRemaining Units: {{ $('Parse Inventory Result').last().json.remainingStock }} (Threshold: {{ $('Parse Inventory Result').last().json.low_stock_threshold }})\\nTriggered by Order: {{ $('Parse Inventory Result').last().json.orderId }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "d938876c-5898-4cda-9cc4-13595b657d37",
+      "name": "Send Low-Stock Warning (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3440,
+        -180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $('Parse Inventory Result').last().json;\nreturn [{\n  json: {\n    orderId: item.orderId,\n    shopifyOrderId: item.shopifyOrderId,\n    customerName: item.customerName,\n    customerEmail: item.customerEmail,\n    hasValidEmail: item.hasValidEmail,\n    customerDisplay: item.customerDisplay,\n    currency: item.currency,\n    totalAmount: item.totalAmount,\n    processedAt: item.processedAt,\n    low_stock_threshold: item.low_stock_threshold,\n    store_name: item.store_name,\n    owner_telegram_chat_id: item.owner_telegram_chat_id,\n    sender_email: item.sender_email,\n    productTitle: item.productTitle,\n    productDisplay: item.productDisplay,\n    sku: item.sku,\n    quantity: item.quantity,\n    unitPrice: item.unitPrice,\n    lineRevenue: item.lineRevenue,\n    remainingStock: item.remainingStock,\n    isLowStock: item.isLowStock,\n    processedStatus: item.processedStatus,\n    errorReason: '',\n  },\n}];"
+      },
+      "id": "d0796572-a091-41da-afff-8fa4aaa82437",
+      "name": "Return Item Success Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3680,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.owner_telegram_chat_id }}",
+        "text": "=🚨 *Inventory / Stock Alert*\\nOrder: {{ $json.orderId }}\\nProduct: {{ $json.productDisplay }}\\nIssue: {{ $json.errorReason }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "f7056ddc-06ac-476a-aec5-2d66f70f6993",
+      "name": "Send Stock Error Alert (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2540,
+        260
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "let item;\ntry {\n  item = $('Evaluate Stock & Build Mutation').last().json;\n} catch (e) {\n  item = $('Loop Over Line Items').last().json;\n}\nconst errInput = $input.first().json || {};\nconst errMsg = item.errorReason || errInput.errorReason || (errInput.error && errInput.error.message) || errInput.message || 'Shopify inventory lookup/update failed';\n\nreturn [{\n  json: {\n    orderId: item.orderId,\n    shopifyOrderId: item.shopifyOrderId,\n    customerName: item.customerName,\n    customerEmail: item.customerEmail,\n    hasValidEmail: item.hasValidEmail,\n    customerDisplay: item.customerDisplay,\n    currency: item.currency,\n    totalAmount: item.totalAmount,\n    processedAt: item.processedAt,\n    low_stock_threshold: item.low_stock_threshold,\n    store_name: item.store_name,\n    owner_telegram_chat_id: item.owner_telegram_chat_id,\n    sender_email: item.sender_email,\n    productTitle: item.productTitle,\n    productDisplay: item.productDisplay,\n    sku: item.sku,\n    quantity: item.quantity,\n    unitPrice: item.unitPrice,\n    lineRevenue: item.lineRevenue,\n    remainingStock: item.currentStock !== undefined && item.currentStock !== null ? item.currentStock : 'N/A',\n    isLowStock: false,\n    processedStatus: 'failed',\n    errorReason: errMsg,\n  },\n}];"
+      },
+      "id": "7f2a4277-7b63-491c-9162-167905539210",
+      "name": "Return Item Failure Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2780,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map((i) => i.json);\nconst first = items[0] || {};\nconst currency = first.currency || 'PKR';\nconst fmtMoney = (n) => currency + ' ' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n\nconst itemLines = items.map((it, idx) => {\n  const stockNote = it.processedStatus === 'updated'\n    ? ('Remaining: ' + it.remainingStock + (it.isLowStock ? ' ⚠️ LOW' : ''))\n    : ('⚠️ NOT UPDATED (' + (it.errorReason || 'Error') + ')');\n  return (idx + 1) + '. ' + it.productDisplay + ' x' + it.quantity + ' — ' + fmtMoney(it.lineRevenue) + ' [' + stockNote + ']';\n});\n\nconst ownerTelegramText = [\n  '🛒 *NEW SHOPIFY ORDER ' + first.orderId + '*',\n  '',\n  '*Customer:* ' + first.customerDisplay,\n  '*Processed:* ' + first.processedAt,\n  '',\n  '*Items:*',\n  ...itemLines,\n  '',\n  '*Order Total:* ' + fmtMoney(first.totalAmount),\n  !first.hasValidEmail ? '\\n⚠️ _Customer email missing — confirmation email skipped._' : '',\n].filter(Boolean).join('\\n');\n\nconst esc = (s) => String(s || '')\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;');\n\nconst rowsHtml = items.map((it) => `\n  <tr>\n    <td style=\"padding:10px 12px;border-bottom:1px solid #e5e7eb;\">${esc(it.productTitle)}${it.sku && it.sku !== 'N/A' ? '<br><span style=\"color:#6b7280;font-size:12px;\">SKU: ' + esc(it.sku) + '</span>' : ''}</td>\n    <td style=\"padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:center;\">${it.quantity}</td>\n    <td style=\"padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;\">${esc(fmtMoney(it.unitPrice))}</td>\n    <td style=\"padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;\">${esc(fmtMoney(it.lineRevenue))}</td>\n  </tr>\n`).join('');\n\nconst emailHtml = `<!DOCTYPE html>\n<html>\n<body style=\"margin:0;padding:24px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;color:#111827;\">\n  <div style=\"max-width:600px;margin:0 auto;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;\">\n    <div style=\"background:#0f172a;color:#ffffff;padding:24px 28px;\">\n      <h1 style=\"margin:0;font-size:20px;\">${esc(first.store_name || 'Northern Treasures')}</h1>\n      <p style=\"margin:6px 0 0;font-size:14px;color:#cbd5e1;\">Order Confirmation — ${esc(first.orderId)}</p>\n    </div>\n    <div style=\"padding:24px 28px;\">\n      <p style=\"margin-top:0;font-size:15px;\">Hi <strong>${esc(first.customerName)}</strong>,</p>\n      <p style=\"font-size:14px;line-height:1.6;color:#374151;\">Thank you for shopping with <strong>${esc(first.store_name || 'Northern Treasures')}</strong>! We have received your order <strong>${esc(first.orderId)}</strong> and our team is preparing it for dispatch.</p>\n      <table style=\"width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;\">\n        <thead>\n          <tr style=\"background:#f9fafb;text-align:left;\">\n            <th style=\"padding:10px 12px;border-bottom:2px solid #e5e7eb;\">Product</th>\n            <th style=\"padding:10px 12px;border-bottom:2px solid #e5e7eb;text-align:center;\">Qty</th>\n            <th style=\"padding:10px 12px;border-bottom:2px solid #e5e7eb;text-align:right;\">Unit Price</th>\n            <th style=\"padding:10px 12px;border-bottom:2px solid #e5e7eb;text-align:right;\">Total</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${rowsHtml}\n        </tbody>\n        <tfoot>\n          <tr>\n            <td colspan=\"3\" style=\"padding:12px;text-align:right;font-weight:700;font-size:15px;\">Order Total:</td>\n            <td style=\"padding:12px;text-align:right;font-weight:700;font-size:15px;color:#0f172a;\">${esc(fmtMoney(first.totalAmount))}</td>\n          </tr>\n        </tfoot>\n      </table>\n      <p style=\"font-size:13px;color:#6b7280;margin-bottom:0;\">Processed on: ${esc(first.processedAt)} (PKT)<br>If you have any questions about your order, simply reply to this email.</p>\n    </div>\n  </div>\n</body>\n</html>`;\n\nreturn [{\n  json: {\n    orderId: first.orderId,\n    customerName: first.customerName,\n    customerEmail: first.customerEmail,\n    hasValidEmail: first.hasValidEmail,\n    owner_telegram_chat_id: first.owner_telegram_chat_id,\n    sender_email: first.sender_email,\n    store_name: first.store_name,\n    ownerTelegramText,\n    emailSubject: (first.store_name || 'Northern Treasures') + ' — Order Confirmation (' + first.orderId + ')',\n    emailHtml,\n  },\n}];"
+      },
+      "id": "4aad803b-f821-4b28-8dee-9cedfa26a1ae",
+      "name": "Build Order Summary & Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.owner_telegram_chat_id }}",
+        "text": "={{ $json.ownerTelegramText }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "d3e346ad-4e36-47ab-b4f8-32d173d72a0b",
+      "name": "Send Owner Order Alert (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1600,
+        -280
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "em1",
+              "leftValue": "={{ $('Build Order Summary & Email').first().json.hasValidEmail }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d85c15d9-3ab4-4041-af6f-98041b73cfd5",
+      "name": "Has Customer Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1820,
+        -280
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Build Order Summary & Email').first().json.sender_email }}",
+        "toEmail": "={{ $('Build Order Summary & Email').first().json.customerEmail }}",
+        "subject": "={{ $('Build Order Summary & Email').first().json.emailSubject }}",
+        "emailFormat": "html",
+        "html": "={{ $('Build Order Summary & Email').first().json.emailHtml }}",
+        "options": {}
+      },
+      "id": "062854d1-7904-4006-ac3a-2e74d5d421b9",
+      "name": "Send Customer Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2060,
+        -360
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "smtp": {
+          "id": "SMTP_CRED_ID",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $('Build Order Summary & Email').first().json;\nconst err = $input.first().json;\nreturn [{\n  json: {\n    owner_telegram_chat_id: summary.owner_telegram_chat_id,\n    orderId: summary.orderId,\n    customerEmail: summary.customerEmail,\n    errorMsg: (err.message || JSON.stringify(err)).slice(0, 250),\n  },\n}];"
+      },
+      "id": "e791b11b-8319-41fd-bda4-36f08b3ba85f",
+      "name": "Format Email Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2300,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.owner_telegram_chat_id }}",
+        "text": "=⚠️ *Customer Email Failed*\\nOrder: {{ $json.orderId }}\\nRecipient: {{ $json.customerEmail }}\\nError: {{ $json.errorMsg }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "9a9b8718-d3b7-441f-990d-8e62f7852e44",
+      "name": "Send Email Error Alert (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2540,
+        -300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Build Order Summary & Email').first().json.owner_telegram_chat_id }}",
+        "text": "=⚠️ *Missing Customer Email*\\nOrder {{ $('Build Order Summary & Email').first().json.orderId }} for {{ $('Build Order Summary & Email').first().json.customerName }} arrived without a valid email address. Confirmation email was NOT sent — manual follow-up needed.",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "d788dad0-b454-4ddd-9f97-4421ec6a3f44",
+      "name": "Send Missing Email Warning (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2060,
+        -180
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Shopify Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC & Validate Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify HMAC & Validate Order": {
+      "main": [
+        [
+          {
+            "node": "Route Order Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Order Status": {
+      "main": [
+        [
+          {
+            "node": "Split Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Duplicate Ignored (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Validation Error (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Line Items": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Line Items": {
+      "main": [
+        [
+          {
+            "node": "Build Order Summary & Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Variant Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Variant Inventory": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Stock & Build Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Fetch API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Fetch API Error": {
+      "main": [
+        [
+          {
+            "node": "Send Stock Error Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Stock & Build Mutation": {
+      "main": [
+        [
+          {
+            "node": "Stock Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Available?": {
+      "main": [
+        [
+          {
+            "node": "Adjust Shopify Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Stock Error Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adjust Shopify Inventory": {
+      "main": [
+        [
+          {
+            "node": "Parse Inventory Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Inventory API Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Inventory API Error": {
+      "main": [
+        [
+          {
+            "node": "Send Stock Error Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Stock Error Alert (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Return Item Failure Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Item Failure Summary": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Inventory Result": {
+      "main": [
+        [
+          {
+            "node": "Log Order Item to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Order Item to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Is Low Stock?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Sheets Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Sheets Error": {
+      "main": [
+        [
+          {
+            "node": "Send Sheets Error Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Sheets Error Alert (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Is Low Stock?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Low Stock?": {
+      "main": [
+        [
+          {
+            "node": "Send Low-Stock Warning (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Item Success Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Low-Stock Warning (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Return Item Success Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Return Item Success Summary": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Order Summary & Email": {
+      "main": [
+        [
+          {
+            "node": "Send Owner Order Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Owner Order Alert (Telegram)": {
+      "main": [
+        [
+          {
+            "node": "Has Customer Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Customer Email?": {
+      "main": [
+        [
+          {
+            "node": "Send Customer Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Missing Email Warning (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Customer Confirmation Email": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Format Email Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email Error": {
+      "main": [
+        [
+          {
+            "node": "Send Email Error Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "errorWorkflow": "A3ErrHndl0000001"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

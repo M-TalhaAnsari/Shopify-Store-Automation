@@ -1,0 +1,822 @@
+{
+  "name": "Telegram to Shopify product listing",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true,
+          "imageSize": "large"
+        }
+      },
+      "id": "6e03d4fb-f6a3-4d3b-a690-c401159edf10",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "618eb795-bbf2-45f0-9452-066059b228bd",
+      "credentials": {
+        "telegramApi": {
+          "id": "FDfHn0a3AMrYH4W7",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.message.photo ? $json.message.photo.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.message.caption || \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "db36ef3f-fcf1-492e-bb56-7ba2583d7c72",
+      "name": "Has photo and caption?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        272,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "publish_automatically",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "ee10e162-a80b-43b4-9f2a-b27420884722",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        496,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3.5-flash-lite",
+          "mode": "list",
+          "cachedResultName": "Gemini 3.5 Flash Lite"
+        },
+        "text": "=You are an e-commerce copywriter. The seller's Telegram caption below is the authoritative description of the product. The attached photo shows the same product; use it for visual details only. If the photo and caption disagree, follow the caption.\n\nSELLER CAPTION (read carefully, it contains the price and other facts):\n\"\"\"\n{{ $('Telegram Trigger').first().json.message.caption }}\n\"\"\"\n\nReturn ONLY a valid JSON object (no markdown) with exactly these keys:\n- title: SEO-optimized product title, max 70 characters\n- descriptionHtml: professional HTML product description (use <p>, <ul>, <li>, <strong>); describe only what is visible in the photo or stated in the caption\n- tags: array of 5 to 10 relevant tags\n- productType: short product type\n- seoTitle: max 60 characters\n- seoDescription: max 155 characters\n- price: number taken from the caption, or null\n- sizes: array of sizes written in the caption, or []\n- colors: array of colors written in the caption, or []\n- sku: SKU written in the caption, or null\n- inventory: stock quantity (integer) written in the caption, or null\n\nSTRICT RULES: price, sizes, colors, sku and inventory must come from the caption only. If a detail is not in the caption use null or []. Never guess or invent them. Do not invent specifications, materials or claims that are not visible or stated.",
+        "inputType": "binary",
+        "options": {
+          "maxOutputTokens": 4000
+        }
+      },
+      "id": "5d1053a7-b018-4079-9712-da8554fe1e14",
+      "name": "Analyze product image",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "Kt1iWUE1rehm2Ogh",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $('Telegram Trigger').first().json.message;\nconst caption = msg.caption || '';\nconst g = $input.first().json;\nlet text = '';\nif (g.content && g.content.parts) text = g.content.parts.map(function (p) { return p.text || ''; }).join('');\nelse if (typeof g.text === 'string') text = g.text;\nelse if (typeof g.output === 'string') text = g.output;\nelse text = JSON.stringify(g);\n\nlet p = {};\nlet parseError = null;\ntry {\n  const s = text.indexOf('{');\n  const e = text.lastIndexOf('}');\n  p = JSON.parse(text.slice(s, e + 1));\n} catch (err) {\n  parseError = err.message;\n}\n\nconst str = function (v) { return (typeof v === 'string' && v.trim() && v.trim().toLowerCase() !== 'null') ? v.trim() : null; };\nconst list = function (v) { return Array.isArray(v) ? v.map(function (x) { return String(x).trim(); }).filter(Boolean) : []; };\nconst num = function (v) {\n  if (v === null || v === undefined || v === '') return null;\n  const n = parseFloat(String(v).replace(/[^0-9.]/g, ''));\n  return isNaN(n) ? null : n;\n};\n\n// Anti-hallucination guard: seller details must literally appear in the caption.\nconst tokens = new Set(caption.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));\nconst inCaption = function (v) {\n  return String(v).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).every(function (t) { return tokens.has(t); });\n};\nconst capNums = (caption.replace(/,/g, '').match(/[0-9]+([.][0-9]+)?/g) || []).map(parseFloat);\n\nlet price = num(p.price);\nif (price === null) {\n  const pm = caption.replace(/,/g, '').match(/(?:price|rs[.]?|pkr|usd|[$])[ ]*[:=-]?[ ]*([0-9]+(?:[.][0-9]+)?)/i) || caption.replace(/,/g, '').match(/([0-9]+(?:[.][0-9]+)?)[ ]*(?:pkr|rs|usd|[$])/i);\n  if (pm) price = parseFloat(pm[1]);\n}\nif (price !== null && capNums.indexOf(price) === -1) price = null;\nlet inventory = num(p.inventory);\nif (inventory !== null) {\n  inventory = Math.round(inventory);\n  if (capNums.indexOf(inventory) === -1) inventory = null;\n}\nlet sku = str(p.sku);\nif (sku && !inCaption(sku)) sku = null;\nconst uniq = function (a) { return a.filter(function (v, i) { return a.indexOf(v) === i; }); };\nconst sizes = uniq(list(p.sizes).filter(inCaption));\nconst colors = uniq(list(p.colors).filter(inCaption));\n\nconst title = str(p.title);\nconst missing = [];\nif (parseError || !title) missing.push('AI analysis failed (' + (parseError || 'no title') + ')');\nif (price === null) missing.push('price');\n\nconst notProvided = [];\nif (!sizes.length) notProvided.push('sizes');\nif (!colors.length) notProvided.push('colors');\nif (!sku) notProvided.push('SKU');\nif (inventory === null) notProvided.push('inventory');\n\nconst options = [];\nif (sizes.length) options.push({ name: 'Size', values: sizes });\nif (colors.length) options.push({ name: 'Color', values: colors });\nlet combos = [[]];\noptions.forEach(function (o) {\n  const next = [];\n  combos.forEach(function (c) { o.values.forEach(function (v) { next.push(c.concat([{ optionName: o.name, name: v }])); }); });\n  combos = next;\n});\nif (!options.length) {\n  options.push({ name: 'Title', values: ['Default Title'] });\n  combos = [[{ optionName: 'Title', name: 'Default Title' }]];\n}\nconst variants = combos.map(function (c) {\n  const v = { optionValues: c, price: String(price === null ? 0 : price.toFixed(2)) };\n  if (sku) {\n    v.sku = combos.length > 1 ? sku + '-' + c.map(function (x) { return x.name.toUpperCase().replace(/[^A-Z0-9]/g, ''); }).join('-') : sku;\n  }\n  return v;\n});\n\nconst status = $('Settings').first().json.publish_automatically === true ? 'ACTIVE' : 'DRAFT';\nconst bin = $('Telegram Trigger').first().binary;\nconst bd = bin && bin.data ? bin.data : {};\nconst mime = bd.mimeType || 'image/jpeg';\nconst ext = bd.fileExtension || 'jpg';\n\nconst stageBody = {\n  query: 'mutation stagedUploadsCreate($input: [StagedUploadInput!]!) { stagedUploadsCreate(input: $input) { stagedTargets { url resourceUrl parameters { name value } } userErrors { field message } } }',\n  variables: { input: [{ resource: 'IMAGE', filename: 'product-' + msg.message_id + '.' + ext, mimeType: mime, httpMethod: 'POST' }] },\n};\n\nreturn [{\n  json: {\n    ready: missing.length === 0,\n    missing: missing,\n    notProvided: notProvided.join(', '),\n    chatId: msg.chat.id,\n    status: status,\n    product: {\n      title: title,\n      descriptionHtml: str(p.descriptionHtml) || '',\n      tags: list(p.tags),\n      productType: str(p.productType) || '',\n      seoTitle: str(p.seoTitle) || title,\n      seoDescription: str(p.seoDescription) || '',\n    },\n    options: options,\n    variants: variants,\n    inventory: inventory,\n    stageBody: stageBody,\n  },\n}];"
+      },
+      "id": "94eb799c-3f5f-4caa-bfda-fa6ace2a24a4",
+      "name": "Parse AI result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "r1",
+              "leftValue": "={{ $json.ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a0bd28e3-52e9-4ccb-a849-13cff0068511",
+      "name": "Details complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1168,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cbmhfk-0s.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.stageBody) }}",
+        "options": {}
+      },
+      "id": "3492a2b0-965a-4bf9-a864-6aa4a0e13f84",
+      "name": "Create staged image upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        800,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XPZx2XY5WQwFYtPI",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst t = res.data && res.data.stagedUploadsCreate && res.data.stagedUploadsCreate.stagedTargets && res.data.stagedUploadsCreate.stagedTargets[0];\nif (!t) throw new Error('Shopify staged upload failed: ' + JSON.stringify(res.errors || res.data || res));\nconst params = {};\nt.parameters.forEach(function (p) { params[p.name] = p.value; });\nconst bin = $('Telegram Trigger').first().binary;\nif (!bin || !bin.data) throw new Error('The Telegram image was not downloaded (no binary data on the trigger item).');\nreturn [{ json: { uploadUrl: t.url, resourceUrl: t.resourceUrl, params: params }, binary: { data: bin.data } }];"
+      },
+      "id": "12caf606-ee30-4e3d-882a-9bc577c61e7a",
+      "name": "Build upload form",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.uploadUrl }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.params[\"Content-Type\"] || \"\" }}"
+            },
+            {
+              "name": "success_action_status",
+              "value": "={{ $json.params[\"success_action_status\"] || \"\" }}"
+            },
+            {
+              "name": "acl",
+              "value": "={{ $json.params[\"acl\"] || \"\" }}"
+            },
+            {
+              "name": "key",
+              "value": "={{ $json.params[\"key\"] || \"\" }}"
+            },
+            {
+              "name": "x-goog-date",
+              "value": "={{ $json.params[\"x-goog-date\"] || \"\" }}"
+            },
+            {
+              "name": "x-goog-credential",
+              "value": "={{ $json.params[\"x-goog-credential\"] || \"\" }}"
+            },
+            {
+              "name": "x-goog-algorithm",
+              "value": "={{ $json.params[\"x-goog-algorithm\"] || \"\" }}"
+            },
+            {
+              "name": "x-goog-signature",
+              "value": "={{ $json.params[\"x-goog-signature\"] || \"\" }}"
+            },
+            {
+              "name": "policy",
+              "value": "={{ $json.params[\"policy\"] || \"\" }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "f704b648-d3f9-49d8-98f2-66e53d7bb33c",
+      "name": "Upload image to Shopify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1248,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cbmhfk-0s.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"query\":\"{ locations(first: 1) { nodes { id name } } }\"}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "28f861c8-b3b2-4b2f-9d66-fb3bf03baf1d",
+      "name": "Get inventory location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1472,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XPZx2XY5WQwFYtPI",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Parse AI result').first().json;\nconst up = $('Build upload form').first().json;\nconst loc = $input.first().json;\nconst nodes = loc && loc.data && loc.data.locations && loc.data.locations.nodes;\nconst locationId = nodes && nodes[0] ? nodes[0].id : null;\n\nconst variants = d.variants.map(function (v) {\n  const out = { optionValues: v.optionValues, price: v.price };\n  if (v.sku) out.sku = v.sku;\n  if (d.inventory !== null && locationId) {\n    out.inventoryItem = { tracked: true };\n    out.inventoryQuantities = [{ locationId: locationId, name: 'available', quantity: d.inventory }];\n  }\n  return out;\n});\n\nconst input = {\n  title: d.product.title,\n  descriptionHtml: d.product.descriptionHtml,\n  productType: d.product.productType,\n  tags: d.product.tags,\n  status: d.status,\n  seo: { title: d.product.seoTitle, description: d.product.seoDescription },\n  productOptions: d.options.map(function (o) { return { name: o.name, values: o.values.map(function (n) { return { name: n }; }) }; }),\n  variants: variants,\n  files: [{ originalSource: up.resourceUrl, contentType: 'IMAGE', alt: d.product.title }],\n};\n\nreturn [{ json: { body: {\n  query: 'mutation productSet($input: ProductSetInput!) { productSet(input: $input, synchronous: true) { product { id handle status onlineStoreUrl } userErrors { field message code } } }',\n  variables: { input: input },\n}, inventorySkipped: d.inventory !== null && !locationId } }];"
+      },
+      "id": "36ece403-22df-494a-b9d6-34f069d6d4b6",
+      "name": "Build product mutation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cbmhfk-0s.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "1f12fc27-7cfa-43ba-97ae-92098dbd40e2",
+      "name": "Create Shopify product",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XPZx2XY5WQwFYtPI",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "k1",
+              "leftValue": "={{ ($json.data && $json.data.productSet && $json.data.productSet.product) ? $json.data.productSet.product.id : \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "k2",
+              "leftValue": "={{ ($json.data && $json.data.productSet && $json.data.productSet.userErrors) ? $json.data.productSet.userErrors.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "02acdc30-ec28-4f99-a53c-944d372e85ed",
+      "name": "Product created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2144,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cbmhfk-0s.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"query\":\"{ publications(first: 20) { nodes { id name } } }\"}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "f9426a13-c769-4423-8a5e-0367d832f793",
+      "name": "Get online store channel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2368,
+        288
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XPZx2XY5WQwFYtPI",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nconst pubs = (res && res.data && res.data.publications && res.data.publications.nodes) || [];\nconst op = pubs.find(function (p) { return /online store/i.test(p.name || ''); });\nconst prod = $('Create Shopify product').first().json.data.productSet.product;\nreturn [{ json: { channelFound: !!op, body: {\n  query: 'mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) { publishablePublish(id: $id, input: $input) { userErrors { field message } } }',\n  variables: { id: prod.id, input: op ? [{ publicationId: op.id }] : [] },\n} } }];"
+      },
+      "id": "59450cae-61ec-471a-9cb8-89a352b56aea",
+      "name": "Build publish request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2592,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://cbmhfk-0s.myshopify.com/admin/api/2026-10/graphql.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "3c54f5d2-1939-488d-8028-c1a5a4feb20b",
+      "name": "Publish to Online Store",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2816,
+        288
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "XPZx2XY5WQwFYtPI",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Parse AI result\").first().json.chatId }}",
+        "text": "=Product created as {{ $('Create Shopify product').first().json.data.productSet.product.status }}: {{ $(\"Parse AI result\").first().json.product.title }}\nShopify admin: https://cbmhfk-0s.myshopify.com/admin/products/{{ $('Create Shopify product').first().json.data.productSet.product.id.split(\"/\").pop() }}\n{{ $('Create Shopify product').first().json.data.productSet.product.status === \"ACTIVE\" ? \"Customer link: https://cbmhfk-0s.myshopify.com/products/\" + $('Create Shopify product').first().json.data.productSet.product.handle : \"Customer link: none, the product is a draft\" }}\n{{ ($('Publish to Online Store').first().json.errors || ($('Publish to Online Store').first().json.data && $('Publish to Online Store').first().json.data.publishablePublish && $('Publish to Online Store').first().json.data.publishablePublish.userErrors.length) || !$('Build publish request').first().json.channelFound) ? \"Warning: could not publish to the Online Store channel, so the customer link may not open. The API token needs read_publications and write_publications.\" : \"\" }}\nNot provided in caption (left empty): {{ $(\"Parse AI result\").first().json.notProvided || \"nothing\" }}\n{{ $(\"Build product mutation\").first().json.inventorySkipped ? \"Note: stock was not set because no inventory location could be read (check the API token has read_locations).\" : \"\" }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "0398589c-370b-47eb-9ef6-a1758e95e37c",
+      "name": "Send confirmation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2368,
+        -96
+      ],
+      "webhookId": "0508ed8d-7fe5-4d52-b743-6b584a614ea2",
+      "credentials": {
+        "telegramApi": {
+          "id": "FDfHn0a3AMrYH4W7",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $(\"Parse AI result\").first().json.chatId }}",
+        "text": "=Shopify did not create the product. Details: {{ JSON.stringify(($json.data && $json.data.productSet && $json.data.productSet.userErrors) ? $json.data.productSet.userErrors : ($json.errors || $json)).slice(0, 800) }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "04f6304f-cea6-4ee2-af25-e1d11799c2d6",
+      "name": "Send failure notice",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2368,
+        96
+      ],
+      "webhookId": "b0ac27a5-8a8b-4913-a14e-75eb1261b1a5",
+      "credentials": {
+        "telegramApi": {
+          "id": "FDfHn0a3AMrYH4W7",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "=Product not created. Missing or unreadable information: {{ $json.missing.join(\", \") }}. Resend the photo with these details in the caption (for example: \"Price $49.99, sizes S M L, colors Black Grey, SKU ABC-1, stock 20\").",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "d3a4d3c5-b114-48b4-9ec1-d9bad5565a61",
+      "name": "Notify missing information",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        912,
+        -32
+      ],
+      "webhookId": "a2a07a8c-20a9-4aa2-8787-4b7c9749de7f",
+      "credentials": {
+        "telegramApi": {
+          "id": "FDfHn0a3AMrYH4W7",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "I need a product photo with a caption. Send the image again and put the details in the caption: price (required), plus sizes, colors, SKU and stock if you have them.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "9839128f-4bbe-4fa2-aa93-56ccd7e17b2d",
+      "name": "Ask for photo and caption",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        496,
+        192
+      ],
+      "webhookId": "63051032-d508-4199-b8d3-496b32c1f28d",
+      "credentials": {
+        "telegramApi": {
+          "id": "FDfHn0a3AMrYH4W7",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Has photo and caption?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has photo and caption?": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask for photo and caption",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Analyze product image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze product image": {
+      "main": [
+        [
+          {
+            "node": "Parse AI result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI result": {
+      "main": [
+        [
+          {
+            "node": "Details complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Details complete?": {
+      "main": [
+        [
+          {
+            "node": "Create staged image upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify missing information",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create staged image upload": {
+      "main": [
+        [
+          {
+            "node": "Build upload form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build upload form": {
+      "main": [
+        [
+          {
+            "node": "Upload image to Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload image to Shopify": {
+      "main": [
+        [
+          {
+            "node": "Get inventory location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get inventory location": {
+      "main": [
+        [
+          {
+            "node": "Build product mutation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build product mutation": {
+      "main": [
+        [
+          {
+            "node": "Create Shopify product",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Shopify product": {
+      "main": [
+        [
+          {
+            "node": "Product created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Product created?": {
+      "main": [
+        [
+          {
+            "node": "Get online store channel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send failure notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get online store channel": {
+      "main": [
+        [
+          {
+            "node": "Build publish request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build publish request": {
+      "main": [
+        [
+          {
+            "node": "Publish to Online Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Online Store": {
+      "main": [
+        [
+          {
+            "node": "Send confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "bc74d475-5186-4abc-bb05-289bf53adc69",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dd3dfc2e82245eb8911677a1419653c25d386fdb1e57749fb271a9c20fdff59b"
+  },
+  "nodeGroups": [
+    {
+      "id": "e7f34a48-e8fd-48e3-8c41-7d6e290586cc",
+      "name": "Analyze product photo",
+      "nodeIds": [
+        "db36ef3f-fcf1-492e-bb56-7ba2583d7c72",
+        "9839128f-4bbe-4fa2-aa93-56ccd7e17b2d",
+        "ee10e162-a80b-43b4-9f2a-b27420884722",
+        "5d1053a7-b018-4079-9712-da8554fe1e14",
+        "94eb799c-3f5f-4caa-bfda-fa6ace2a24a4",
+        "a0bd28e3-52e9-4ccb-a849-13cff0068511"
+      ],
+      "description": "Checks the Telegram photo and caption, has Gemini write the listing copy, and asks for missing details like price."
+    },
+    {
+      "id": "a062c54e-ddc4-4abb-ab4f-078fd4364bb8",
+      "name": "Create Shopify listing",
+      "nodeIds": [
+        "3492a2b0-965a-4bf9-a864-6aa4a0e13f84",
+        "12caf606-ee30-4e3d-882a-9bc577c61e7a",
+        "f704b648-d3f9-49d8-98f2-66e53d7bb33c",
+        "28f861c8-b3b2-4b2f-9d66-fb3bf03baf1d",
+        "36ece403-22df-494a-b9d6-34f069d6d4b6",
+        "1f12fc27-7cfa-43ba-97ae-92098dbd40e2",
+        "02acdc30-ec28-4f99-a53c-944d372e85ed",
+        "f9426a13-c769-4423-8a5e-0367d832f793",
+        "59450cae-61ec-471a-9cb8-89a352b56aea",
+        "3c54f5d2-1939-488d-8028-c1a5a4feb20b",
+        "0398589c-370b-47eb-9ef6-a1758e95e37c",
+        "04f6304f-cea6-4ee2-af25-e1d11799c2d6"
+      ],
+      "description": "Uploads the photo, creates the draft product with variants and stock, then sends the result back to Telegram."
+    }
+  ],
+  "id": "wWyFwUk7kbEladuo",
+  "tags": []
+}

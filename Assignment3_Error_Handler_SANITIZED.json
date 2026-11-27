@@ -1,0 +1,120 @@
+{
+  "id": "A3ErrHndl0000001",
+  "name": "Assignment 3 - Shopify Automation Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "6c328e69-c960-489b-937f-99f15a710385",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "es1",
+              "name": "owner_telegram_chat_id",
+              "value": "CHAT_ID_PENDING",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "4cd24bd4-1f70-4083-8875-39cd4a45f5e1",
+      "name": "Error Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst exec = data.execution || {};\nconst wf = data.workflow || {};\nconst err = exec.error || {};\nconst ts = new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi', hour12: true });\n\nconst message = [\n  '🚨 *WORKFLOW ERROR ALERT*',\n  '',\n  '*Workflow:* ' + (wf.name || 'Order-to-Fulfillment Automation'),\n  '*Failed Node:* ' + (err.node ? err.node.name : (exec.lastNodeExecuted || 'Unknown')),\n  '*Error:* ' + (err.message || err.description || 'Unexpected execution failure'),\n  '*Execution ID:* ' + (exec.id || 'N/A'),\n  '*Time (PKT):* ' + ts,\n  exec.url ? '*Execution URL:* ' + exec.url : '',\n  '',\n  '⚠️ Please inspect n8n and process any affected order manually.',\n].filter(Boolean).join('\\n');\n\nreturn [{\n  json: {\n    chatId: data.owner_telegram_chat_id,\n    message,\n  },\n}];"
+      },
+      "id": "59eed32d-db16-4ec3-81ed-1efaf6e4f602",
+      "name": "Format Error Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "db113019-35bd-40b9-9aba-7091e4f9e146",
+      "name": "Send Error Alert (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CRED_ID",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Error Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Settings": {
+      "main": [
+        [
+          {
+            "node": "Format Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
